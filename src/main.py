@@ -1,5 +1,5 @@
 from datetime import date, datetime, timedelta
-from typing import Optional
+from typing import Optional, Tuple
 
 from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.exceptions import RequestValidationError
@@ -20,6 +20,29 @@ from queries import (
 
 settings = get_settings()
 app = FastAPI(title="ScanRole API", version="1.0.0")
+
+COUNTRY_ISO_MAP = {
+    "US": "United States",
+    "CA": "Canada",
+    "GB": "United Kingdom",
+    "UK": "United Kingdom",
+}
+
+SORT_WHITELIST = {
+    "jobs_current",
+    "jobs_delta_pct",
+    "salary_current",
+    "salary_delta_pct",
+    "remote_current",
+    "remote_delta_pp",
+    "role",
+    "country",
+    "state",
+}
+
+DEFAULT_SORT_BY = "jobs_current"
+DEFAULT_SORT_DIR = "desc"
+PAGE_SIZE_ALLOWED = {10, 25, 50, 100}
 
 allowed_origins = [settings.api_base_url] if settings.api_base_url else ["*"]
 app.add_middleware(
@@ -58,6 +81,57 @@ async def http_exception_handler(_, exc: HTTPException):
 def _error_response(code: str, message: str, status_code: int):
     return JSONResponse(status_code=status_code, content={"error": {"code": code, "message": message}})
 
+def _normalize_country(value: Optional[str]) -> Optional[str]:
+    if not value:
+        return None
+    upper = value.strip().upper()
+    if upper in COUNTRY_ISO_MAP:
+        return upper if len(upper) == 2 else "GB"
+    if upper == "UNITED STATES":
+        return "US"
+    if upper == "CANADA":
+        return "CA"
+    if upper == "UNITED KINGDOM":
+        return "GB"
+    return upper if len(upper) == 2 else value
+
+
+def _country_to_iso(country: str) -> Optional[str]:
+    if not country:
+        return None
+    for iso, name in COUNTRY_ISO_MAP.items():
+        if name == country and len(iso) == 2 and iso != "UK":
+            return iso
+    return None
+
+
+def _iso_to_country(iso: Optional[str]) -> Optional[str]:
+    if not iso:
+        return None
+    return COUNTRY_ISO_MAP.get(iso, None)
+
+
+def _normalize_sort(
+    sort_by: Optional[str],
+    sort_dir: Optional[str],
+    legacy_sort: Optional[str],
+) -> Tuple[str, str]:
+    if not sort_by and legacy_sort:
+        legacy_map = {
+            "jobs_count_desc": ("jobs_current", "desc"),
+            "avg_salary_desc": ("salary_current", "desc"),
+            "remote_pct_desc": ("remote_current", "desc"),
+            "salary_delta_pct_desc": ("salary_delta_pct", "desc"),
+            "role_asc": ("role", "asc"),
+        }
+        mapped = legacy_map.get(legacy_sort)
+        if mapped:
+            sort_by, sort_dir = mapped
+    sort_by = sort_by or DEFAULT_SORT_BY
+    sort_by = sort_by if sort_by in SORT_WHITELIST else DEFAULT_SORT_BY
+    sort_dir = (sort_dir or DEFAULT_SORT_DIR).lower()
+    sort_dir = sort_dir if sort_dir in ("asc", "desc") else DEFAULT_SORT_DIR
+    return sort_by, sort_dir
 
 @app.get("/api/v1/health")
 async def health():
@@ -72,13 +146,21 @@ async def meta_periods():
 @app.get("/api/v1/meta/countries")
 async def meta_countries(_auth=Depends(require_role_explorer)):
     table_name = settings.role_table
-    return {"items": get_countries(table_name)}
+    countries = get_countries(table_name)
+    iso_items = []
+    for country in countries:
+        iso = _country_to_iso(country)
+        if iso:
+            iso_items.append(iso)
+    return {"items": iso_items}
 
 
 @app.get("/api/v1/meta/states")
 async def meta_states(country: str = Query(..., min_length=2), _auth=Depends(require_role_explorer)):
     table_name = settings.role_table
-    return {"items": get_states_by_country(table_name, country)}
+    normalized = _normalize_country(country)
+    country_name = _iso_to_country(normalized) if normalized else None
+    return {"items": get_states_by_country(table_name, country_name)}
 
 
 @app.get("/api/v1/meta/roles")
@@ -93,7 +175,10 @@ async def role_explorer(
     country: Optional[str] = None,
     state: Optional[str] = None,
     role: Optional[str] = None,
-    sort: str = Query("jobs_count_desc"),
+    sort_by: Optional[str] = Query(None),
+    sort_dir: Optional[str] = Query(None),
+    sort: Optional[str] = Query(None),
+    debug: Optional[bool] = Query(False),
     page: int = Query(1, ge=1),
     page_size: int = Query(25, ge=1, le=100),
     _auth=Depends(require_role_explorer),
@@ -102,11 +187,16 @@ async def role_explorer(
         return _error_response("VALIDATION_ERROR", "Invalid period_days", 400)
 
     table_name = settings.role_table
-    country = country or None
+    country_iso = _normalize_country(country) if country else None
+    country_name = _iso_to_country(country_iso) if country_iso else None
     state = state or None
     role = role or None
+    if page_size not in PAGE_SIZE_ALLOWED:
+        page_size = 25
 
-    role_end_dates = get_role_end_dates(table_name, country, state, role)
+    sort_by, sort_dir = _normalize_sort(sort_by, sort_dir, sort)
+
+    role_end_dates = get_role_end_dates(table_name, country_name, state, role)
     if not role_end_dates:
         return {
             "as_of_date": None,
@@ -130,8 +220,8 @@ async def role_explorer(
         prev_end = (end_day - timedelta(days=period_days)).strftime("%Y-%m-%d")
         prev_start = (end_day - timedelta(days=period_days * 2 - 1)).strftime("%Y-%m-%d")
 
-        current = get_metrics(table_name, role_name, start, end_str, country, state)
-        previous = get_metrics(table_name, role_name, prev_start, prev_end, country, state)
+        current = get_metrics(table_name, role_name, start, end_str, country_name, state)
+        previous = get_metrics(table_name, role_name, prev_start, prev_end, country_name, state)
 
         jobs_current = int(current.get("jobs_count") or 0)
         jobs_prev = int(previous.get("jobs_count") or 0)
@@ -157,7 +247,7 @@ async def role_explorer(
         rows.append(
             {
                 "role": role_name,
-                "country": country,
+                "country": country_name,
                 "state": state,
                 "jobs_current": jobs_current,
                 "jobs_prev": jobs_prev,
@@ -179,24 +269,31 @@ async def role_explorer(
     if role != "Other":
         rows = [row for row in rows if row["role"] != "Other"]
 
-    sort_map = {
-        "jobs_count_desc": ("jobs_current", True),
-        "avg_salary_desc": ("salary_current", True),
-        "remote_pct_desc": ("remote_current", True),
-        "salary_delta_pct_desc": ("salary_delta_pct", True),
-        "role_asc": ("role", False),
-    }
-    sort_key, reverse = sort_map.get(sort, ("jobs_current", True))
-    rows.sort(key=lambda r: (r.get(sort_key) is None, r.get(sort_key)), reverse=reverse)
+    rows.sort(key=lambda r: (r.get("role") or "", r.get("country") or "", r.get("state") or ""))
+
+    def primary_key(row):
+        value = row.get(sort_by)
+        if value is None:
+            return (1, None)
+        return (0, value)
+
+    rows.sort(key=primary_key, reverse=sort_dir == "desc")
 
     total = len(rows)
     offset = (page - 1) * page_size
     items = rows[offset : offset + page_size]
 
-    last_update = get_last_update(table_name, country, state)
+    last_update = get_last_update(table_name, country_name, state)
 
-    return {
+    response = {
         "as_of_date": last_update,
         "total": total,
         "items": items,
+        "applied_sort_by": sort_by,
+        "applied_sort_dir": sort_dir,
     }
+
+    if debug:
+        response["debug_sort_key"] = f"{sort_by}:{sort_dir}"
+
+    return response
