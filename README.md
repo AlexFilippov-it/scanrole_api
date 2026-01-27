@@ -155,38 +155,7 @@ curl -H "Authorization: Bearer $TOKEN" \
   "https://scanrole.com/api/v1/role-explorer?page=2&page_size=50"
 ```
 
-## Local development
 ### Requirements
 - Python 3.10+
 - MySQL access to Role Explorer data table
 
-### Setup
-```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -e .[dev]
-cp .env.example .env
-```
-
-Update `.env` values:
-- `WP_INTROSPECT_URL` (e.g. `https://scanrole.com/wp-json/scanrole/v1/introspect`)
-- `WP_INTROSPECT_SECRET`
-- `DB_*` connection
-- `ROLE_TABLE` (default `jobspy_normalized_jobs`)
-
-### Run
-```bash
-uvicorn src.main:app --host 0.0.0.0 --port 8000
-```
-
-## Deploy behind https://scanrole.com/api/v1 (reverse proxy)
-This setup uses a local Uvicorn instance bound to `127.0.0.1:8001` and a web-server
-proxy from `/api/v1` on the main domain.
-
-1) Create `.env` with real values (see `.env.example`).
-2) Start the service (systemd suggested). Template unit is in `deploy/scanrole-api.service`.
-3) Add the proxy snippet from `deploy/nginx-scanrole-api.conf` to the server block for `scanrole.com`
-   using FastPanel control panel (do not edit nginx configs manually).
-
-## CI
-GitHub Actions runs `ruff` and `pytest`.
