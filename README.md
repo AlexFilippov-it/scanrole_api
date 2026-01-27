@@ -1,7 +1,6 @@
 # ScanRole API
 
 [![API Terms](https://img.shields.io/badge/API%20Terms-scanrole.com-blue)](https://scanrole.com/api_terms/)
-![Release](https://img.shields.io/github/v/release/AlexFilippov-it/scanrole_api)
 
 Read-only JSON API for Role Explorer data. Auth is via Bearer token validated against WordPress introspection.
 
