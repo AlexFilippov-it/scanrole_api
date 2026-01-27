@@ -161,6 +161,26 @@ Returns available role names.
 Use of this API is governed by:
 https://scanrole.com/api_terms/
 
+## Product Screenshots
+Filters
+![Filters](img/1.png)
+
+Results
+![Results](img/2.png)
+
+Results with legend
+![Results with legend](img/3.png)
+
+Role details (coming soon)
+![Role details](img/4.png)
+
+Role details (coming soon)
+![Role details](img/5.png)
+
+See live pages:
+- Role Explorer: https://scanrole.com/role_explorer/
+- Role detail example: https://scanrole.com/role/frontend-developer/
+
 ## Examples
 ### Basic request
 ```bash
