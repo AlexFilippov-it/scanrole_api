@@ -1,7 +1,6 @@
 # ScanRole API
 
-![CI](https://github.com/AlexFilippov-it/scanrole_api/actions/workflows/ci.yml/badge.svg)
-![License](https://img.shields.io/github/license/AlexFilippov-it/scanrole_api)
+[![API Terms](https://img.shields.io/badge/API%20Terms-scanrole.com-blue)](https://scanrole.com/api_terms/)
 ![Release](https://img.shields.io/github/v/release/AlexFilippov-it/scanrole_api)
 
 Read-only JSON API for Role Explorer data. Auth is via Bearer token validated against WordPress introspection.
@@ -157,6 +156,10 @@ Returns available role names.
   }
 }
 ```
+
+## API Terms
+Use of this API is governed by:
+https://scanrole.com/api_terms/
 
 ## Examples
 ### Basic request
