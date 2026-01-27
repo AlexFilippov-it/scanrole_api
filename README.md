@@ -157,36 +157,18 @@ Returns available role names.
 }
 ```
 
-## API Terms
-Use of this API is governed by:
-https://scanrole.com/api_terms/
-
-## Product Screenshots
-Filters
-![Filters](img/1.png)
-
-Results
-![Results](img/2.png)
-
-Results with legend
-![Results with legend](img/3.png)
-
-Role details (coming soon)
-![Role details](img/4.png)
-
-Role details (coming soon)
-![Role details](img/5.png)
-
-See live pages:
-- Role Explorer: https://scanrole.com/role_explorer/
-- Role detail example: https://scanrole.com/role/frontend-developer/
-
 ## Examples
 ### Basic request
 ```bash
 curl -H "Authorization: Bearer $TOKEN" \
   "https://scanrole.com/api/v1/role-explorer?period_days=30&country=US&page=1&page_size=25"
 ```
+![Filters](img/1.png)
+![Results](img/2.png)
+![Results with legend](img/3.png)
+
+See live pages:
+- Role Explorer: https://scanrole.com/role_explorer/
 
 ### Sorting
 ```bash
@@ -199,6 +181,16 @@ curl -H "Authorization: Bearer $TOKEN" \
 curl -H "Authorization: Bearer $TOKEN" \
   "https://scanrole.com/api/v1/role-explorer?page=2&page_size=50"
 ```
+
+Role details (coming soon)
+
+![Role details](img/4.png)
+
+Role details (coming soon)
+
+![Role details](img/5.png)
+
+- Role detail example: https://scanrole.com/role/frontend-developer/
 
 ### Requirements
 - Python 3.10+
