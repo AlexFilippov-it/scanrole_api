@@ -2,8 +2,6 @@
 
 [![API Terms](https://img.shields.io/badge/API%20Terms-scanrole.com-blue)](https://scanrole.com/api_terms/)
 
-Read-only JSON API for Role Explorer data. Auth is via Bearer token validated against WordPress introspection.
-
 ## Purpose
 ScanRole API provides read-only labor market analytics for tech roles:
 - job demand
