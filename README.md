@@ -24,6 +24,20 @@ How to obtain a token:
 1) Register or log in on scanrole.com
 2) Generate an API token in your user dashboard (**Add API Token**)
 
+## Rate limits
+Rate limits are enabled. Limits are applied separately per IP and per token.
+
+Per IP:
+- 60 requests per minute
+- 1000 requests per day
+
+Per token:
+- 120 requests per minute
+- 2000 requests per day
+
+Health endpoint:
+- 300 requests per minute
+
 ## Base URL
 ```
 https://scanrole.com/api/v1

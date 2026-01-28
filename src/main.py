@@ -1,13 +1,15 @@
 from datetime import date, datetime, timedelta
+import logging
 from typing import Optional, Tuple
 
-from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from auth import require_role_explorer
 from config import get_settings
+from rate_limit import InMemoryRateLimitStore, extract_client_ip, extract_token_identifier
 from queries import (
     compute_delta,
     get_countries,
@@ -20,6 +22,8 @@ from queries import (
 
 settings = get_settings()
 app = FastAPI(title="ScanRole API", version="1.0.0")
+rate_limit_store = InMemoryRateLimitStore()
+rate_limit_logger = logging.getLogger("scanrole.rate_limit")
 
 COUNTRY_ISO_MAP = {
     "US": "United States",
@@ -80,6 +84,115 @@ async def http_exception_handler(_, exc: HTTPException):
 
 def _error_response(code: str, message: str, status_code: int):
     return JSONResponse(status_code=status_code, content={"error": {"code": code, "message": message}})
+
+
+def _rate_limit_response(limit: int, remaining: int, reset_ts: int, retry_after: int):
+    headers = {
+        "Retry-After": str(retry_after),
+        "X-RateLimit-Limit": str(limit),
+        "X-RateLimit-Remaining": str(max(0, remaining)),
+        "X-RateLimit-Reset": str(reset_ts),
+    }
+    body = {
+        "error": {
+            "code": "RATE_LIMITED",
+            "message": "Too many requests",
+            "retry_after_seconds": retry_after,
+        }
+    }
+    return JSONResponse(status_code=429, content=body, headers=headers)
+
+
+def _apply_limit(key: str, limit: int, window_seconds: int):
+    if limit <= 0:
+        return None
+    status = rate_limit_store.hit(key, limit, window_seconds)
+    if status.allowed:
+        return None
+    return _rate_limit_response(limit, status.remaining, status.reset_ts, status.retry_after)
+
+
+@app.middleware("http")
+async def rate_limit_middleware(request: Request, call_next):
+    if not settings.rate_limit_enabled:
+        return await call_next(request)
+    if request.method == "OPTIONS":
+        return await call_next(request)
+
+    path = request.url.path or ""
+    is_health = path == "/api/v1/health"
+    is_meta = path.startswith("/api/v1/meta/")
+    is_role = path == "/api/v1/role-explorer"
+
+    if not (is_health or is_meta or is_role):
+        return await call_next(request)
+
+    ip = extract_client_ip(request, settings.trust_proxy_headers)
+    token_key, token_prefix = extract_token_identifier(request.headers.get("authorization"))
+
+    if is_health:
+        response = _apply_limit(f"ip:{ip}:health", settings.rate_limit_health_per_minute, 60)
+        if response:
+            return response
+        return await call_next(request)
+
+    if token_key:
+        response = _apply_limit(
+            f"{token_key}:minute",
+            settings.rate_limit_token_per_minute,
+            60,
+        )
+        if response:
+            rate_limit_logger.warning(
+                "Rate limit exceeded token=%s ip=%s path=%s window=minute",
+                token_prefix,
+                ip,
+                path,
+            )
+            return response
+        if settings.rate_limit_token_per_day > 0:
+            response = _apply_limit(
+                f"{token_key}:day",
+                settings.rate_limit_token_per_day,
+                86400,
+            )
+            if response:
+                rate_limit_logger.warning(
+                    "Rate limit exceeded token=%s ip=%s path=%s window=day",
+                    token_prefix,
+                    ip,
+                    path,
+                )
+                return response
+
+    response = _apply_limit(
+        f"ip:{ip}:minute",
+        settings.rate_limit_ip_per_minute,
+        60,
+    )
+    if response:
+        rate_limit_logger.warning(
+            "Rate limit exceeded ip=%s path=%s window=minute",
+            ip,
+            path,
+        )
+        return response
+
+    if settings.rate_limit_ip_per_day > 0:
+        response = _apply_limit(
+            f"ip:{ip}:day",
+            settings.rate_limit_ip_per_day,
+            86400,
+        )
+        if response:
+            rate_limit_logger.warning(
+                "Rate limit exceeded ip=%s path=%s window=day",
+                ip,
+                path,
+            )
+            return response
+
+    return await call_next(request)
 
 def _normalize_country(value: Optional[str]) -> Optional[str]:
     if not value:
